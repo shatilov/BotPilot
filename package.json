@@ -1,0 +1,36 @@
+{
+  "name": "assyst-daemon",
+  "version": "0.1.0",
+  "description": "Local assistant daemon with a master agent that delegates work to CLI agents.",
+  "main": "dist/electron/main.js",
+  "bin": {
+    "assyst-daemon": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && electron .",
+    "master": "tsx src/cli.ts master",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "daemon",
+    "electron",
+    "codex",
+    "claude"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "electron": "^41.5.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.2"
+  }
+}

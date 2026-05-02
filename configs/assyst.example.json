@@ -1,0 +1,20 @@
+{
+  "defaultProvider": "codex",
+  "workspaceRoot": "/Users/shatilov/Work/assyst-daemon",
+  "agents": {
+    "codex": {
+      "type": "codex",
+      "bin": "codex",
+      "sandbox": "workspace-write",
+      "approvalPolicy": "never",
+      "extraArgs": ["--skip-git-repo-check"]
+    },
+    "claude": {
+      "type": "claude",
+      "bin": "claude",
+      "permissionMode": "auto",
+      "outputFormat": "text",
+      "noSessionPersistence": true
+    }
+  }
+}

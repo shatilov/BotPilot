@@ -1,0 +1,12 @@
+{
+  "defaultProvider": "echo",
+  "workspaceRoot": "/Users/shatilov/Work/assyst-daemon",
+  "agents": {
+    "echo": {
+      "type": "command",
+      "command": "node",
+      "args": ["-e", "process.stdin.pipe(process.stdout)"],
+      "promptDelivery": "stdin"
+    }
+  }
+}
