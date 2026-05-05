@@ -4,7 +4,7 @@ export function renderSettingsPage(): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Assyst Settings</title>
+    <title>BotPilot Settings</title>
     <style>
       :root {
         color-scheme: light;
@@ -249,7 +249,7 @@ export function renderSettingsPage(): string {
 
       async function load() {
         try {
-          const settings = await window.assyst.getTelegramSettings();
+          const settings = await window.botpilot.getTelegramSettings();
           renderSettings(settings);
           setStatus(settings.encryptionAvailable ? "Ready" : "Secure storage unavailable", settings.encryptionAvailable ? "" : "error");
         } catch (error) {
@@ -262,7 +262,7 @@ export function renderSettingsPage(): string {
         setBusy(true);
         setStatus("Saving...");
         try {
-          const settings = await window.assyst.saveTelegramSettings({
+          const settings = await window.botpilot.saveTelegramSettings({
             botToken: botToken.value,
             trustedChatId: trustedChatId.value,
             pollingMaxIntervalMinutes: Number(pollingMaxIntervalMinutes.value),
@@ -281,7 +281,7 @@ export function renderSettingsPage(): string {
         setBusy(true);
         setStatus("Saving...");
         try {
-          const settings = await window.assyst.saveTelegramSettings({
+          const settings = await window.botpilot.saveTelegramSettings({
             clearBotToken: true,
             trustedChatId: trustedChatId.value,
             pollingMaxIntervalMinutes: Number(pollingMaxIntervalMinutes.value),

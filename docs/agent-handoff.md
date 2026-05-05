@@ -1,12 +1,12 @@
-# Assyst Daemon Agent Handoff
+# BotPilot Agent Handoff
 
-Last updated: 2026-05-03.
+Last updated: 2026-05-05.
 
-This document is for future agents continuing work on `/Users/shatilov/Work/assyst-daemon`.
+This document is for future agents continuing work on BotPilot.
 
 ## Goal
 
-Assyst Daemon is a local macOS desktop daemon. It should read trusted Telegram bot messages, normalize them into one assistant conversation, pass them to a master agent, and return the master agent answer back to Telegram. The master agent can be backed by Codex, Claude, or another console agent, but product behavior must feel like one continuous assistant.
+BotPilot is a local macOS desktop daemon. It should read trusted Telegram bot messages, normalize them into one assistant conversation, pass them to a master agent, and return the master agent answer back to Telegram. The master agent can be backed by Codex, Claude, or another console agent, but product behavior must feel like one continuous assistant.
 
 ## Current Stack
 
@@ -31,10 +31,13 @@ Assyst Daemon is a local macOS desktop daemon. It should read trusted Telegram b
 
 The app starts a main chat window and keeps running when the window is closed. The tray/menu-bar menu can show the window, open settings, pause/resume background work, and quit.
 
+Electron uses `app.requestSingleInstanceLock()` so a second launch focuses the existing window instead of starting another Telegram polling daemon.
+
 The chat UI is styled like a messenger:
 
 - user messages align right;
 - assistant/system/error messages align left;
+- downloaded Telegram attachments render as media cards: photos/stickers as image previews, videos/animations/video notes as video players, voice/audio as audio players, and unsupported files as local links;
 - agent activity/progress is shown while Codex is running.
 
 Important: raw model chain-of-thought is not displayed. The UI only shows operational progress events such as queueing, Codex MCP startup, thread creation/resume, waiting, completion, and errors.
@@ -47,6 +50,7 @@ Current files:
 
 - `settings.json`: Telegram settings.
 - `dialogs.json`: persisted master dialog metadata.
+- `chat-transcript.jsonl`: append-only mirror transcript for app/Telegram chat events.
 - `telegram-state.json`: Telegram polling offset and last answer timestamp.
 - `telegram-files/`: downloaded Telegram files.
 
@@ -109,7 +113,7 @@ Core files:
 - `src/mcp/codexChatsServer.ts`
 - `src/codex/codexData.ts`
 
-The master Codex thread receives an Assyst MCP server with:
+The master Codex thread receives a BotPilot MCP server with:
 
 - `list_codex_chats`
 - `get_codex_chat`
@@ -134,12 +138,18 @@ Telegram behavior:
 
 - polls `getUpdates`;
 - stores offset in `telegram-state.json`;
+- advances the Telegram update offset before long-running master-agent processing so fetched updates are not reprocessed after restart;
 - ignores messages not from the trusted `chat_id`;
 - normalizes Telegram updates into `IncomingMessage`;
+- publishes trusted Telegram messages and successfully generated answers into the app transcript/window;
 - downloads supported files through `getFile` into `telegram-files/`;
+- coalesces Telegram albums by `media_group_id` before publishing/routing: waits for a 1.2s quiet window, flushes immediately at the Bot API maximum of 10 items, and force-flushes after 6s;
+- handles explicit trusted restart requests such as `/restart` as a control command before the master agent: sends an acknowledgement, stops background polling/Codex MCP, then calls Electron `app.relaunch()`/`app.exit(0)`;
 - calls the master agent;
 - sends the answer back with `sendMessage`;
 - sends `typing` chat actions every 4 seconds while the master agent runs.
+
+When a user sends a task from the Electron chat form, the main process records that host message in the same transcript, sends a Telegram mirror message with `Вы написали на хосте:` plus a plain quoted copy of the user text, routes the task to the master agent, then mirrors the agent answer back to the trusted Telegram chat.
 
 Supported incoming Telegram content:
 
@@ -171,9 +181,12 @@ Polling cadence:
 Current tests:
 
 - `test/backgroundRuntime.test.ts`
+- `test/chatTranscriptStore.test.ts`
 - `test/masterAgent.test.ts`
+- `test/telegramHostMirror.test.ts`
 - `test/telegramMessageNormalizer.test.ts`
 - `test/telegramPollingCadence.test.ts`
+- `test/telegramPollingService.test.ts`
 
 Last verified commands:
 
@@ -186,7 +199,7 @@ npm audit
 Last known result:
 
 - build passes;
-- 11 tests pass;
+- 24 tests pass;
 - npm audit reports 0 vulnerabilities.
 
 ## Important Commands
@@ -206,7 +219,7 @@ npm run dev
 Run master agent from CLI:
 
 ```bash
-npm run master -- --provider codex --text "Summarize the project structure" --cwd /Users/shatilov/Work/assyst-daemon
+npm run master -- --provider codex --text "Summarize the project structure" --cwd /path/to/workspace
 ```
 
 Build and test:
@@ -220,13 +233,13 @@ npm audit
 Manual Electron launch used during development:
 
 ```bash
-open -na /Users/shatilov/Work/assyst-daemon/node_modules/electron/dist/Electron.app --args /Users/shatilov/Work/assyst-daemon
+open -na /path/to/BotPilot/node_modules/electron/dist/Electron.app --args /path/to/BotPilot
 ```
 
 Stop current dev Electron process:
 
 ```bash
-pkill -f '/Users/shatilov/Work/assyst-daemon/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /Users/shatilov/Work/assyst-daemon'
+pkill -f '/path/to/BotPilot/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /path/to/BotPilot'
 ```
 
 ## Known Design Decisions
@@ -244,10 +257,10 @@ pkill -f '/Users/shatilov/Work/assyst-daemon/node_modules/electron/dist/Electron
 
 - Add a visible Telegram status panel in the app window, not only tray status.
 - Add manual "poll now" action for development/debugging.
-- Add integration tests for `TelegramPollingService` with a fake Telegram client and fake master agent.
-- Add transcript storage so a replacement Codex MCP thread can be seeded after MCP restart.
+- Broaden `TelegramPollingService` integration tests as more Telegram payload types are wired into UI behavior.
+- Use `chat-transcript.jsonl` to seed replacement Codex MCP threads after MCP restart.
 - Consider CLI resume fallback if Codex MCP thread state is lost.
-- Decide how to handle voice transcription. Voice files are downloaded now, but no STT pipeline is wired into the app transport yet.
+- Voice messages render in the app with a playable audio control and transcript area. The app transport has a best-effort STT hook: set `BOTPILOT_STT_COMMAND` to a local command that prints transcript text or JSON with `text`; `{file}` and `{language}` placeholders are supported, with optional `BOTPILOT_STT_LANGUAGE`. Legacy `ASSYST_STT_COMMAND` and `ASSYST_STT_LANGUAGE` are still accepted.
 - Decide how to render image/document summaries in Telegram responses if the master agent produces long output.
 - Add macOS launch-at-login and power/wake behavior once product flow is stable.
 - Package/sign the Electron app for real macOS use.
@@ -258,4 +271,4 @@ pkill -f '/Users/shatilov/Work/assyst-daemon/node_modules/electron/dist/Electron
 - Do not remove trusted-chat filtering.
 - Do not read arbitrary local Codex transcripts unless the user asks through the trusted interface.
 - Keep `~/.codex` MCP tools read-only.
-- Avoid destructive git commands; the project currently has many untracked files.
+- Avoid destructive git commands.

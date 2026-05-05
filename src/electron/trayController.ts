@@ -20,7 +20,7 @@ export class TrayController {
     }
 
     this.tray = new Tray(createTrayImage());
-    this.tray.setToolTip("Assyst Daemon");
+    this.tray.setToolTip("BotPilot");
     this.tray.on("click", () => {
       void this.showWindow();
     });
@@ -43,7 +43,7 @@ export class TrayController {
 
     const menu = Menu.buildFromTemplate([
       {
-        label: status.running ? "Assyst Daemon: running" : "Assyst Daemon: stopped",
+        label: status.running ? "BotPilot: running" : "BotPilot: stopped",
         enabled: false,
       },
       {

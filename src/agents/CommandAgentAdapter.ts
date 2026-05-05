@@ -128,7 +128,7 @@ function appendBounded(current: string, next: string, maxBytes: number): string 
     return value;
   }
 
-  const marker = "\n[assyst-daemon: output truncated]\n";
+  const marker = "\n[botpilot: output truncated]\n";
   const allowed = Math.max(0, maxBytes - Buffer.byteLength(marker, "utf8"));
   return marker + Buffer.from(value, "utf8").subarray(-allowed).toString("utf8");
 }

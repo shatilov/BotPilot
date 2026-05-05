@@ -1,6 +1,6 @@
 {
   "defaultProvider": "echo",
-  "workspaceRoot": "/Users/shatilov/Work/assyst-daemon",
+  "workspaceRoot": "/path/to/workspace",
   "agents": {
     "echo": {
       "type": "command",

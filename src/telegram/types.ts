@@ -58,6 +58,7 @@ export interface TelegramFileInfo extends Record<string, unknown> {
 export interface TelegramMessage extends Record<string, unknown> {
   message_id: number;
   message_thread_id?: number;
+  media_group_id?: string;
   date?: number;
   chat: TelegramChat;
   from?: TelegramUser;

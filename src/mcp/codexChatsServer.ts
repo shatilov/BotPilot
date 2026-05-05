@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getCodexChat, listCodexChats, listCodexProjects } from "../codex/codexData";
 
 const server = new McpServer({
-  name: "assyst-codex-chats",
+  name: "botpilot-codex-chats",
   version: "0.1.0",
 });
 

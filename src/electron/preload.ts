@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AgentRunResult } from "../domain/types";
+import type { ChatMessageEvent } from "./chatEvents";
 
 export interface ChatSettings {
   defaultProvider: string;
@@ -37,18 +38,26 @@ export interface TelegramSettingsUpdate {
   clearBotToken?: boolean;
 }
 
-export interface AssystApi {
+export interface BotPilotApi {
   getSettings(): Promise<ChatSettings>;
+  getChatHistory(): Promise<ChatMessageEvent[]>;
   sendMessage(request: ChatSendRequest): Promise<AgentRunResult>;
+  onChatMessage(callback: (event: ChatMessageEvent) => void): () => void;
   onRunEvent(callback: (event: ChatRunEvent) => void): () => void;
   openSettings(): Promise<void>;
   getTelegramSettings(): Promise<TelegramSettingsView>;
   saveTelegramSettings(update: TelegramSettingsUpdate): Promise<TelegramSettingsView>;
 }
 
-const api: AssystApi = {
+const api: BotPilotApi = {
   getSettings: () => ipcRenderer.invoke("assyst:get-settings") as Promise<ChatSettings>,
+  getChatHistory: () => ipcRenderer.invoke("assyst:get-chat-history") as Promise<ChatMessageEvent[]>,
   sendMessage: (request) => ipcRenderer.invoke("assyst:send-message", request) as Promise<AgentRunResult>,
+  onChatMessage: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, chatEvent: ChatMessageEvent) => callback(chatEvent);
+    ipcRenderer.on("assyst:chat-message", listener);
+    return () => ipcRenderer.off("assyst:chat-message", listener);
+  },
   onRunEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, runEvent: ChatRunEvent) => callback(runEvent);
     ipcRenderer.on("assyst:run-event", listener);
@@ -59,4 +68,5 @@ const api: AssystApi = {
   saveTelegramSettings: (update) => ipcRenderer.invoke("assyst:save-telegram-settings", update) as Promise<TelegramSettingsView>,
 };
 
+contextBridge.exposeInMainWorld("botpilot", api);
 contextBridge.exposeInMainWorld("assyst", api);

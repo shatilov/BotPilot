@@ -1,10 +1,10 @@
-# Assyst Daemon Agent Notes
+# BotPilot Agent Notes
 
 Read this file first, then read [docs/agent-handoff.md](docs/agent-handoff.md) for the current implementation map, verification status, and next work.
 
 ## Product Direction
 
-Assyst Daemon is a local desktop daemon for routing Telegram/user messages to a master agent. The master agent can use Codex, Claude, or another console agent, but the product-level behavior must feel like one continuous assistant.
+BotPilot is a local desktop daemon for routing Telegram/user messages to a master agent. The master agent can use Codex, Claude, or another console agent, but the product-level behavior must feel like one continuous assistant.
 
 ## Master-Agent Invariant
 

@@ -1,6 +1,6 @@
 # Codex CLI Notes
 
-This document records the Codex CLI behavior relevant to Assyst Daemon. It was checked against the locally installed `codex` CLI on 2026-05-02.
+This document records the Codex CLI behavior relevant to BotPilot. It was checked against the locally installed `codex` CLI on 2026-05-02.
 
 ## Commands
 
@@ -36,7 +36,7 @@ Useful options for this project:
 
 ## One Master Dialog
 
-Assyst Daemon should not call plain `codex exec` for every chat message. That creates independent Codex sessions.
+BotPilot should not call plain `codex exec` for every chat message. That creates independent Codex sessions.
 
 The desired model is:
 
@@ -87,7 +87,7 @@ compact-prompt
 config
 ```
 
-This maps well to Assyst Daemon because the app can keep one MCP server process alive and call:
+This maps well to BotPilot because the app can keep one MCP server process alive and call:
 
 ```text
 tools/call codex       -> create master thread
@@ -121,9 +121,9 @@ For the in-app master chat, prefer MCP mode over direct CLI parsing:
 
 Do not use MCP as the only persistence mechanism. Persist the app transcript and current MCP `threadId`; if `codex-reply` reports `Session not found`, create a replacement `codex` thread and bootstrap it from the stored transcript.
 
-## Assyst Codex-Chats MCP Tooling
+## BotPilot Codex-Chats MCP Tooling
 
-Assyst Daemon provides a project-local MCP server for the master agent:
+BotPilot provides a project-local MCP server for the master agent:
 
 ```bash
 node dist/mcp/codexChatsServer.js

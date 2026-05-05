@@ -165,6 +165,7 @@ async function normalizeMessageUpdate(
             updateKind,
             messageId: message.message_id,
             messageThreadId: message.message_thread_id,
+            mediaGroupId: message.media_group_id,
             contentTypes,
             chat: summarizeChat(message.chat),
             from: message.from ? summarizeUser(message.from) : undefined,

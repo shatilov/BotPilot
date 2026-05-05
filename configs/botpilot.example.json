@@ -1,6 +1,6 @@
 {
   "defaultProvider": "codex",
-  "workspaceRoot": "/Users/shatilov/Work/assyst-daemon",
+  "workspaceRoot": "/path/to/workspace",
   "agents": {
     "codex": {
       "type": "codex",

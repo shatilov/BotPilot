@@ -60,6 +60,6 @@ describe("MasterAgent", () => {
 
     expect(prompt).toContain("[redacted]");
     expect(prompt).not.toContain("secret-token");
-    expect(prompt).toContain("Assyst Master Agent");
+    expect(prompt).toContain("BotPilot Master Agent");
   });
 });

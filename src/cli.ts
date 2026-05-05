@@ -131,8 +131,8 @@ function printUsage(): void {
   process.stderr.write(
     [
       "Usage:",
-      "  assyst-daemon master --provider codex --text \"Do the task\" --cwd /path/to/workspace",
-      "  echo \"Do the task\" | assyst-daemon master --provider claude",
+      "  botpilot master --provider codex --text \"Do the task\" --cwd /path/to/workspace",
+      "  echo \"Do the task\" | botpilot master --provider claude",
       "",
     ].join("\n"),
   );

@@ -4,7 +4,7 @@ export function renderChatPage(): string {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Assyst Daemon</title>
+    <title>BotPilot</title>
     <style>
       :root {
         color-scheme: light;
@@ -193,6 +193,136 @@ export function renderChatPage(): string {
         font-size: 13px;
       }
 
+      .attachments {
+        display: grid;
+        gap: 8px;
+        margin-top: 9px;
+      }
+
+      .attachments:first-child {
+        margin-top: 0;
+      }
+
+      .attachment {
+        min-width: min(320px, 100%);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #f8fafc;
+        padding: 9px;
+      }
+
+      .attachment.photo,
+      .attachment.video,
+      .attachment.animation,
+      .attachment.video_note,
+      .attachment.sticker {
+        min-width: min(420px, 100%);
+      }
+
+      .message.user .attachment {
+        border-color: rgba(255, 255, 255, 0.24);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .attachment-heading {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .message.user .attachment-heading {
+        color: #fff;
+      }
+
+      .attachment-detail {
+        color: var(--muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .message.user .attachment-detail {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .attachment audio {
+        display: block;
+        width: 100%;
+        height: 32px;
+        margin-top: 8px;
+      }
+
+      .attachment-image,
+      .attachment-video {
+        display: block;
+        width: 100%;
+        max-height: 360px;
+        margin-top: 8px;
+        border-radius: 7px;
+        background: #101828;
+        object-fit: contain;
+      }
+
+      .attachment-image {
+        height: auto;
+      }
+
+      .attachment-link {
+        display: inline-block;
+        margin-top: 8px;
+        color: var(--primary);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+
+      .message.user .attachment-link {
+        color: #fff;
+      }
+
+      .transcript {
+        margin-top: 8px;
+        border-top: 1px solid var(--border);
+        padding-top: 8px;
+        color: var(--text);
+      }
+
+      .message.user .transcript {
+        border-color: rgba(255, 255, 255, 0.2);
+        color: #fff;
+      }
+
+      .transcript-label {
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+      }
+
+      .message.user .transcript-label {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .transcript-text {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        line-height: 1.4;
+        font-size: 12px;
+      }
+
+      .transcript.failed .transcript-text,
+      .transcript.unavailable .transcript-text {
+        color: var(--muted);
+      }
+
+      .message.user .transcript.failed .transcript-text,
+      .message.user .transcript.unavailable .transcript-text {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
       .meta {
         display: flex;
         flex-wrap: wrap;
@@ -360,7 +490,7 @@ export function renderChatPage(): string {
         <div class="title">
           <div class="mark">A</div>
           <div>
-            <h1>Assyst Daemon</h1>
+            <h1>BotPilot</h1>
             <div class="subtitle" id="workspace">Loading workspace...</div>
           </div>
         </div>
@@ -408,13 +538,14 @@ export function renderChatPage(): string {
       let activeRequestId = null;
       let activeStartedAt = 0;
       let elapsedTimer = null;
+      const seenChatEventIds = new Set();
 
       function setStatus(text, mode) {
         status.textContent = text;
         status.className = "status" + (mode ? " " + mode : "");
       }
 
-      function addMessage(role, text, meta, kind) {
+      function addMessage(role, text, meta, kind, attachments) {
         const item = document.createElement("article");
         item.className = "message " + (kind || role);
 
@@ -425,10 +556,17 @@ export function renderChatPage(): string {
         const bubble = document.createElement("div");
         bubble.className = "bubble";
 
-        const content = document.createElement("pre");
-        content.className = "content";
-        content.textContent = text;
-        bubble.appendChild(content);
+        const normalizedText = typeof text === "string" ? text : "";
+        if (normalizedText.trim()) {
+          const content = document.createElement("pre");
+          content.className = "content";
+          content.textContent = normalizedText;
+          bubble.appendChild(content);
+        }
+
+        if (attachments && attachments.length) {
+          bubble.appendChild(renderAttachments(attachments));
+        }
 
         if (meta && meta.length) {
           const metaEl = document.createElement("div");
@@ -447,6 +585,203 @@ export function renderChatPage(): string {
         thread.appendChild(item);
         scroll.scrollTop = scroll.scrollHeight;
         return item;
+      }
+
+      function renderAttachments(attachments) {
+        const list = document.createElement("div");
+        list.className = "attachments";
+        for (const attachment of attachments) {
+          list.appendChild(renderAttachment(attachment));
+        }
+        return list;
+      }
+
+      function renderAttachment(attachment) {
+        const card = document.createElement("div");
+        card.className = "attachment " + (attachment.kind || "unknown");
+
+        const heading = document.createElement("div");
+        heading.className = "attachment-heading";
+
+        const title = document.createElement("span");
+        title.textContent = attachmentTitle(attachment);
+        heading.appendChild(title);
+
+        const detail = attachmentDetail(attachment);
+        if (detail) {
+          const detailEl = document.createElement("span");
+          detailEl.className = "attachment-detail";
+          detailEl.textContent = detail;
+          heading.appendChild(detailEl);
+        }
+        card.appendChild(heading);
+
+        const mediaType = classifyAttachmentMedia(attachment);
+        if (mediaType === "audio" && attachment.mediaUrl) {
+          const audio = document.createElement("audio");
+          audio.controls = true;
+          audio.preload = "metadata";
+          audio.src = attachment.mediaUrl;
+          card.appendChild(audio);
+        } else if (mediaType === "image" && attachment.mediaUrl) {
+          const image = document.createElement("img");
+          image.className = "attachment-image";
+          image.loading = "lazy";
+          image.alt = attachmentTitle(attachment);
+          image.src = attachment.mediaUrl;
+          if (attachment.width) {
+            image.width = attachment.width;
+          }
+          if (attachment.height) {
+            image.height = attachment.height;
+          }
+          card.appendChild(image);
+        } else if (mediaType === "video" && attachment.mediaUrl) {
+          const video = document.createElement("video");
+          video.className = "attachment-video";
+          video.controls = true;
+          video.preload = "metadata";
+          video.playsInline = true;
+          video.src = attachment.mediaUrl;
+          if (attachment.kind === "animation") {
+            video.muted = true;
+            video.loop = true;
+          }
+          card.appendChild(video);
+        } else if (attachment.mediaUrl) {
+          const link = document.createElement("a");
+          link.className = "attachment-link";
+          link.href = attachment.mediaUrl;
+          link.textContent = attachment.fileName || "Open attachment";
+          card.appendChild(link);
+        }
+
+        const transcript = renderTranscript(attachment.transcript);
+        if (transcript) {
+          card.appendChild(transcript);
+        }
+
+        return card;
+      }
+
+      function renderTranscript(transcript) {
+        if (!transcript) {
+          return null;
+        }
+
+        const block = document.createElement("div");
+        block.className = "transcript " + transcript.status;
+
+        const label = document.createElement("div");
+        label.className = "transcript-label";
+        label.textContent = "Transcript";
+        block.appendChild(label);
+
+        const text = document.createElement("pre");
+        text.className = "transcript-text";
+        if (transcript.status === "ok" && transcript.text) {
+          text.textContent = transcript.text;
+        } else if (transcript.status === "failed") {
+          text.textContent = "Transcription failed" + (transcript.error ? ": " + transcript.error : ".");
+        } else {
+          text.textContent = "Transcription is not configured.";
+        }
+        block.appendChild(text);
+
+        return block;
+      }
+
+      function attachmentTitle(attachment) {
+        if (attachment.kind === "voice") {
+          return "Voice message";
+        }
+        if (attachment.kind === "audio") {
+          return "Audio";
+        }
+        if (attachment.kind === "photo") {
+          return "Photo";
+        }
+        if (attachment.kind === "video") {
+          return "Video";
+        }
+        if (attachment.kind === "animation") {
+          return "Animation";
+        }
+        if (attachment.kind === "video_note") {
+          return "Video note";
+        }
+        if (attachment.kind === "sticker") {
+          return "Sticker";
+        }
+        if (attachment.kind === "document") {
+          return attachment.fileName || "Document";
+        }
+        return attachment.fileName || attachment.kind || "Attachment";
+      }
+
+      function attachmentDetail(attachment) {
+        const parts = [];
+        if (typeof attachment.durationSeconds === "number") {
+          parts.push(formatDuration(attachment.durationSeconds));
+        }
+        if (typeof attachment.width === "number" && typeof attachment.height === "number") {
+          parts.push(attachment.width + "x" + attachment.height);
+        }
+        if (typeof attachment.sizeBytes === "number") {
+          parts.push(formatBytes(attachment.sizeBytes));
+        }
+        if (!parts.length && attachment.mimeType) {
+          parts.push(attachment.mimeType);
+        }
+        return parts.join(" · ");
+      }
+
+      function formatDuration(seconds) {
+        const normalized = Math.max(0, Math.round(seconds));
+        const minutes = Math.floor(normalized / 60);
+        const remainingSeconds = String(normalized % 60).padStart(2, "0");
+        return minutes + ":" + remainingSeconds;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) {
+          return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+          return Math.round(bytes / 1024) + " KB";
+        }
+        return (bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + " MB";
+      }
+
+      function classifyAttachmentMedia(attachment) {
+        const mimeType = String(attachment.mimeType || "").toLowerCase();
+        const fileName = String(attachment.fileName || "").toLowerCase();
+        if (attachment.kind === "voice" || attachment.kind === "audio" || mimeType.startsWith("audio/")) {
+          return "audio";
+        }
+        if (
+          attachment.kind === "photo" ||
+          mimeType.startsWith("image/") ||
+          fileName.endsWith(".jpg") ||
+          fileName.endsWith(".jpeg") ||
+          fileName.endsWith(".png") ||
+          fileName.endsWith(".webp") ||
+          fileName.endsWith(".gif")
+        ) {
+          return "image";
+        }
+        if (
+          attachment.kind === "video" ||
+          attachment.kind === "video_note" ||
+          attachment.kind === "animation" ||
+          mimeType.startsWith("video/") ||
+          fileName.endsWith(".mp4") ||
+          fileName.endsWith(".mov") ||
+          fileName.endsWith(".webm")
+        ) {
+          return "video";
+        }
+        return "file";
       }
 
       function setBusy(value) {
@@ -513,10 +848,32 @@ export function renderChatPage(): string {
         }
       }
 
+      function applyChatMessageEvent(event, replay) {
+        if (!event || !event.eventId || seenChatEventIds.has(event.eventId)) {
+          return;
+        }
+
+        seenChatEventIds.add(event.eventId);
+        addMessage(event.role, event.text, event.meta || [], event.kind, event.attachments || []);
+
+        if (replay) {
+          return;
+        }
+
+        if (event.kind === "user") {
+          startActivity(event.requestId);
+          setStatus("Running " + (event.meta && event.meta[0] ? event.meta[0] : "task") + "...", "busy");
+        } else if ((event.kind === "assistant" || event.kind === "error") && event.requestId === activeRequestId) {
+          stopActivity();
+          setStatus(event.kind === "assistant" ? "Ready" : "Agent failed", event.kind === "assistant" ? undefined : "error");
+        }
+      }
+
       async function init() {
         try {
-          window.assyst.onRunEvent(addActivityLine);
-          const settings = await window.assyst.getSettings();
+          window.botpilot.onChatMessage((event) => applyChatMessageEvent(event, false));
+          window.botpilot.onRunEvent(addActivityLine);
+          const settings = await window.botpilot.getSettings();
           workspace.textContent = settings.workspaceRoot || "Workspace is not set";
 
           for (const name of settings.providers) {
@@ -527,9 +884,16 @@ export function renderChatPage(): string {
           }
 
           provider.value = settings.defaultProvider;
-          addMessage("system", "Master-agent chat is ready. Pick a provider and send a task.", [
-            "default: " + settings.defaultProvider,
-          ], "system");
+          const history = await window.botpilot.getChatHistory();
+          if (history.length) {
+            for (const event of history) {
+              applyChatMessageEvent(event, true);
+            }
+          } else {
+            addMessage("system", "Master-agent chat is ready. Pick a provider and send a task.", [
+              "default: " + settings.defaultProvider,
+            ], "system");
+          }
         } catch (error) {
           setStatus(error && error.message ? error.message : String(error), "error");
         }
@@ -548,29 +912,17 @@ export function renderChatPage(): string {
 
         input.value = "";
         const requestId = createRequestId();
-        addMessage("user", text, [provider.value], "user");
         setBusy(true);
-        startActivity(requestId);
-        setStatus("Running " + provider.value + "...", "busy");
+        setStatus("Sending " + provider.value + " task...", "busy");
 
-        const startedAt = Date.now();
         try {
-          const result = await window.assyst.sendMessage({
+          await window.botpilot.sendMessage({
             requestId,
             text,
             provider: provider.value,
           });
-          const output = result.stdout.trim() || result.stderr.trim() || (result.ok ? "Done" : "No output");
-          addMessage("master", output, [
-            result.provider,
-            result.ok ? "ok" : "failed",
-            String(result.durationMs) + "ms",
-            "exit: " + String(result.exitCode),
-          ], result.ok ? "assistant" : "error");
-          setStatus("Ready");
         } catch (error) {
           const message = error && error.message ? error.message : String(error);
-          addMessage("master", message, [String(Date.now() - startedAt) + "ms"], "error");
           setStatus(message, "error");
         } finally {
           stopActivity();
@@ -581,7 +933,7 @@ export function renderChatPage(): string {
 
       settingsButton.addEventListener("click", async () => {
         try {
-          await window.assyst.openSettings();
+          await window.botpilot.openSettings();
         } catch (error) {
           setStatus(error && error.message ? error.message : String(error), "error");
         }

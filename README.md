@@ -1,6 +1,6 @@
-# Assyst Daemon
+# BotPilot
 
-Assyst Daemon is a local assistant runner. The first layer is a master agent: it receives a normalized message, builds a task prompt, and delegates execution to a console agent such as Codex, Claude, or another command.
+BotPilot lets you control your computer through a bot-powered local agent. A trusted Telegram bot or the local Electron chat sends normalized tasks to a master agent, which can delegate execution to Codex, Claude, or another console command.
 
 ## Current Scope
 
@@ -11,7 +11,7 @@ Assyst Daemon is a local assistant runner. The first layer is a master agent: it
 - Settings window for Telegram bot token and a trusted controlling `chat_id`.
 - Telegram polling transport with trusted-chat filtering, adaptive polling cadence, file downloads, and replies back to the chat.
 - Codex MCP backend for one live master-agent dialog.
-- Assyst MCP tools for the master agent to list/read local Codex chats and list Codex projects.
+- BotPilot MCP tools for the master agent to list/read local Codex chats and list Codex projects.
 - CLI entrypoint for local master-agent runs.
 - Agent adapters for Codex, Claude, and generic commands.
 - Testable orchestration core independent from Telegram.
@@ -31,13 +31,13 @@ npm install
 Run a master task with Codex:
 
 ```bash
-npm run master -- --provider codex --text "Summarize the project structure" --cwd /Users/shatilov/Work/assyst-daemon
+npm run master -- --provider codex --text "Summarize the project structure" --cwd /path/to/workspace
 ```
 
 Run with Claude:
 
 ```bash
-npm run master -- --provider claude --text "Summarize the project structure" --cwd /Users/shatilov/Work/assyst-daemon
+npm run master -- --provider claude --text "Summarize the project structure" --cwd /path/to/workspace
 ```
 
 Start the Electron shell:
@@ -59,7 +59,7 @@ The master Codex thread also receives a project-local MCP server with `list_code
 ## Architecture
 
 ```text
-Telegram transport later
+Telegram/Electron transport
   -> IncomingMessage
   -> MasterAgent
   -> Dialog/session store

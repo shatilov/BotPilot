@@ -1,10 +1,10 @@
 {
-  "name": "assyst-daemon",
+  "name": "botpilot",
   "version": "0.1.0",
-  "description": "Local assistant daemon with a master agent that delegates work to CLI agents.",
+  "description": "Control your computer through a bot-powered local agent.",
   "main": "dist/electron/main.js",
   "bin": {
-    "assyst-daemon": "dist/cli.js"
+    "botpilot": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

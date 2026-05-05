@@ -2,7 +2,7 @@ import type { IncomingMessage } from "../domain/types";
 
 export function buildMasterPrompt(message: IncomingMessage): string {
   return [
-    "You are Assyst Master Agent.",
+    "You are BotPilot Master Agent.",
     "",
     "Role:",
     "- Treat the incoming message as the user's task.",

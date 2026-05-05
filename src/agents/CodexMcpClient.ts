@@ -116,7 +116,7 @@ export class CodexMcpClient {
       protocolVersion: "2024-11-05",
       capabilities: {},
       clientInfo: {
-        name: "assyst-daemon",
+        name: "botpilot",
         version: "0.1.0",
       },
     }, INIT_TIMEOUT_MS);
