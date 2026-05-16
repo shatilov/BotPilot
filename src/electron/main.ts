@@ -1,7 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, net, protocol } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, net, protocol, shell, systemPreferences } from "electron";
 import { CodexMcpAdapter } from "../agents/CodexMcpAdapter";
 import { CodexMcpClient } from "../agents/CodexMcpClient";
 import { createAdapters } from "../agents/createAdapters";
@@ -18,9 +20,16 @@ import { BackgroundRuntime } from "./backgroundRuntime";
 import { JsonlChatTranscriptStore } from "./ChatTranscriptStore";
 import type { ChatAttachmentTranscript, ChatMessageAttachment, ChatMessageEvent } from "./chatEvents";
 import { renderChatPage } from "./chatPage";
-import { resolveCommand } from "./commandResolver";
+import { resolveCommand, withCommandSearchPath } from "./commandResolver";
 import { renderSettingsPage } from "./settingsPage";
-import { AppSettingsStore, DEFAULT_TELEGRAM_POLLING_MAX_INTERVAL_MINUTES, type TelegramSettingsUpdate } from "./settingsStore";
+import {
+  AppSettingsStore,
+  DEFAULT_TELEGRAM_POLLING_MAX_INTERVAL_MINUTES,
+  type MasterAgentSettingsUpdate,
+  type MasterAgentSettingsView,
+  type TelegramSettingsUpdate,
+} from "./settingsStore";
+import { BotPilotBrowserUseBackend } from "./browserUseBackend";
 import { TrayController } from "./trayController";
 import { CommandVoiceTranscriber, enrichVoiceTranscripts } from "./voiceTranscription";
 
@@ -30,6 +39,7 @@ let isQuitting = false;
 let masterAgent: MasterAgent | undefined;
 let masterConfig: MasterAgentConfig | undefined;
 let codexMcpClient: CodexMcpClient | undefined;
+let browserUseBackend: BotPilotBrowserUseBackend | undefined;
 let settingsStore: AppSettingsStore | undefined;
 let telegramPollingService: TelegramPollingService | undefined;
 let chatTranscriptStore: JsonlChatTranscriptStore | undefined;
@@ -85,6 +95,7 @@ const trayController = new TrayController({
     isQuitting = true;
     runtime.stop();
     void codexMcpClient?.stop();
+    void browserUseBackend?.stop();
     trayController.destroy();
     app.quit();
   },
@@ -92,7 +103,7 @@ const trayController = new TrayController({
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
-  app.quit();
+  app.exit(0);
 } else {
   app.on("second-instance", () => {
     void createWindow().then((window) => {
@@ -148,11 +159,11 @@ async function createSettingsWindow(): Promise<BrowserWindow> {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 540,
-    height: 470,
+    width: 760,
+    height: 660,
     title: "BotPilot Settings",
     show: true,
-    resizable: false,
+    resizable: true,
     minimizable: false,
     parent: mainWindow,
     webPreferences: {
@@ -173,14 +184,12 @@ async function createSettingsWindow(): Promise<BrowserWindow> {
 
 if (hasSingleInstanceLock) {
   app.whenReady().then(async () => {
-    if (process.platform === "darwin") {
-      app.dock?.hide();
-    }
-
     settingsStore = new AppSettingsStore(path.join(app.getPath("userData"), "settings.json"));
     chatTranscriptStore = new JsonlChatTranscriptStore(path.join(app.getPath("userData"), "chat-transcript.jsonl"));
     telegramFilesRoot = path.join(app.getPath("userData"), "telegram-files");
     registerAssystMediaProtocol(telegramFilesRoot);
+    browserUseBackend = new BotPilotBrowserUseBackend();
+    await browserUseBackend.start();
     await loadChatHistory();
     telegramPollingService = new TelegramPollingService({
       settingsStore,
@@ -231,11 +240,12 @@ if (hasSingleInstanceLock) {
       onRestartRequested: (message) => scheduleSafeRestart(`telegram:${message.replyChatId}`),
     });
     runtime.start();
-    setupMasterAgent();
+    await setupMasterAgent();
     setupIpcHandlers();
     trayController.create();
     setInterval(() => trayController.updateMenu(), 15_000).unref();
     await createWindow();
+    void requestMacOsControlPermissions();
   }).catch((error: unknown) => {
     console.error(error);
     app.quit();
@@ -259,6 +269,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   runtime.stop();
   void codexMcpClient?.stop();
+  void browserUseBackend?.stop();
   trayController.destroy();
 });
 
@@ -272,10 +283,19 @@ function readBackgroundIntervalMs(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TELEGRAM_POLLING_MAX_INTERVAL_MINUTES * 60_000;
 }
 
-function setupMasterAgent(): void {
-  const workspaceRoot = app.getAppPath();
+async function setupMasterAgent(): Promise<void> {
+  const previousCodexMcpClient = codexMcpClient;
+  codexMcpClient = undefined;
+  masterAgent = undefined;
+  masterConfig = undefined;
+  await previousCodexMcpClient?.stop();
+
+  const workspaceRoot = resolveWorkspaceRoot();
   const dialogStore = new JsonDialogStore(path.join(app.getPath("userData"), "dialogs.json"));
-  const codexChatsMcpPath = path.join(__dirname, "..", "mcp", "codexChatsServer.js");
+  const codexChatsMcpPath = resolveCodexChatsMcpPath();
+  const defaultMasterAgentSettings = buildDefaultMasterAgentSettings(codexChatsMcpPath);
+  const masterAgentSettings = await getSettingsStore().getMasterAgentSettings(defaultMasterAgentSettings);
+  const mcpServers = parseMcpServersJson(masterAgentSettings.mcpServersJson);
   const baseCodexConfig = defaultConfig.agents.codex;
   const baseClaudeConfig = defaultConfig.agents.claude;
   if (baseCodexConfig.type !== "codex" || baseClaudeConfig.type !== "claude") {
@@ -285,21 +305,11 @@ function setupMasterAgent(): void {
   const codexConfig: CodexAgentConfig = {
     ...baseCodexConfig,
     bin: resolveCommand(baseCodexConfig.bin ?? "codex"),
+    env: withCommandSearchPath(baseCodexConfig.env),
     sandbox: "danger-full-access",
-    developerInstructions: [
-      "You have BotPilot MCP tools for local Codex data.",
-      "Use list_codex_chats when the user asks for Codex chats, sessions, threads, or conversation history.",
-      "Use get_codex_chat only for a specific chat id or when the user clearly asks to inspect a selected chat.",
-      "Use list_codex_projects when the user asks for Codex projects or trusted workspaces.",
-      "Do not expose secrets from transcripts; summarize sensitive content instead of quoting it.",
-    ].join("\n"),
+    developerInstructions: masterAgentSettings.systemPrompt,
     config: {
-      mcp_servers: {
-        botpilot_codex_chats: {
-          command: resolveCommand("node"),
-          args: [codexChatsMcpPath],
-        },
-      },
+      mcp_servers: mcpServers,
     },
   };
 
@@ -311,11 +321,13 @@ function setupMasterAgent(): void {
       claude: {
         ...baseClaudeConfig,
         bin: resolveCommand(baseClaudeConfig.bin ?? "claude"),
+        env: withCommandSearchPath(baseClaudeConfig.env),
       },
       echo: {
         type: "command",
         command: resolveCommand("node"),
         args: ["-e", "process.stdin.pipe(process.stdout)"],
+        env: withCommandSearchPath(),
         promptDelivery: "stdin",
       },
     },
@@ -332,11 +344,218 @@ function setupMasterAgent(): void {
   adapters.set("codex", new CodexMcpAdapter(codexConfig, {
     client: codexMcpClient,
     dialogId: "master:codex",
-    dialogVersion: "codex-mcp+botpilot-codex-chats-v1",
+    dialogVersion: buildMasterDialogVersion(masterAgentSettings),
+    buildSeedPrompt: (request) => buildRecentTranscriptSeedPrompt(request.id),
     store: dialogStore,
   }));
 
   masterAgent = new MasterAgent(config, adapters);
+}
+
+function buildDefaultMasterAgentSettings(codexChatsMcpPath: string): MasterAgentSettingsView {
+  return {
+    systemPrompt: buildDefaultMasterSystemPrompt(),
+    mcpServersJson: formatJson(buildDefaultMcpServers(codexChatsMcpPath)),
+  };
+}
+
+function buildDefaultMasterSystemPrompt(): string {
+  return [
+    "You have BotPilot MCP tools for local Codex data.",
+    "Use list_codex_chats when the user asks for Codex chats, sessions, threads, or conversation history.",
+    "Use get_codex_chat only for a specific chat id or when the user clearly asks to inspect a selected chat.",
+    "Use list_codex_projects when the user asks for Codex projects or trusted workspaces.",
+    "You have a node_repl MCP server. For browser-use tasks, first run tool_search for node_repl js and use the mcp__node_repl__js tool.",
+    "For real browser tasks, prefer the dedicated BotPilot Chrome controlled through CDP at http://127.0.0.1:9222 with profile /Users/shatilov/Library/Application Support/BotPilot/ChromeProfile.",
+    "If that Chrome is not already running, start /Applications/Google Chrome.app/Contents/MacOS/Google Chrome with --remote-debugging-port=9222 and --user-data-dir=/Users/shatilov/Library/Application Support/BotPilot/ChromeProfile.",
+    "Use the in-app Browser Use backend named iab only as a fallback; navigation through iab is currently known to hang in some cases.",
+    "For authenticated websites, rely on the dedicated BotPilot Chrome profile and ask the user to log in there once if needed.",
+    "Subagents that need browser access must also use node_repl js; do not report browser-use unavailable before checking tool_search.",
+    "Do not expose secrets from transcripts; summarize sensitive content instead of quoting it.",
+  ].join("\n");
+}
+
+function buildDefaultMcpServers(codexChatsMcpPath: string): Record<string, unknown> {
+  return {
+    node_repl: {
+      command: resolveNodeReplCommand(),
+      env: buildNodeReplEnv(),
+    },
+    botpilot_codex_chats: {
+      command: resolveCommand("node"),
+      args: [codexChatsMcpPath],
+    },
+  };
+}
+
+function parseMcpServersJson(value: string): Record<string, unknown> {
+  const parsed = JSON.parse(value) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("MCP servers must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function formatJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function buildMasterDialogVersion(settings: MasterAgentSettingsView): string {
+  const hash = createHash("sha256")
+    .update(settings.systemPrompt)
+    .update("\n---mcp---\n")
+    .update(settings.mcpServersJson)
+    .digest("hex")
+    .slice(0, 16);
+  return `codex-mcp+master-settings-${hash}`;
+}
+
+function getDefaultMasterAgentSettings(): MasterAgentSettingsView {
+  return buildDefaultMasterAgentSettings(resolveCodexChatsMcpPath());
+}
+
+function resolveWorkspaceRoot(): string {
+  const configured = process.env.BOTPILOT_WORKSPACE_ROOT ?? process.env.ASSYST_WORKSPACE_ROOT;
+  if (configured?.trim()) {
+    return configured.trim();
+  }
+
+  return app.isPackaged ? os.homedir() : app.getAppPath();
+}
+
+function resolveCodexChatsMcpPath(): string {
+  const bundledPath = path.join(__dirname, "..", "mcp", "codexChatsServer.js");
+  if (!app.isPackaged) {
+    return bundledPath;
+  }
+
+  return bundledPath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
+}
+
+function resolveNodeReplCommand(): string {
+  const configured = process.env.BOTPILOT_NODE_REPL_BIN ?? process.env.CODEX_NODE_REPL_BIN;
+  if (configured?.trim()) {
+    return configured.trim();
+  }
+
+  const appBundlePath = "/Applications/Codex.app/Contents/Resources/node_repl";
+  if (existsSync(appBundlePath)) {
+    return appBundlePath;
+  }
+
+  return resolveCommand("node_repl");
+}
+
+function buildNodeReplEnv(): Record<string, string> {
+  const trustedCodePaths = [
+    path.join(os.homedir(), ".codex", "plugins", "cache", "openai-bundled", "browser-use"),
+    "/Applications/Codex.app/Contents/Resources/plugins/openai-bundled/plugins/browser-use",
+  ];
+
+  return {
+    BROWSER_USE_DISABLE_AMBIENT_NETWORK: "1",
+    NODE_REPL_REQUEST_META: JSON.stringify({
+      "x-codex-browser-use-disable-ambient-network": true,
+      "x-codex-browser-use-security-mode": "disabled-for-local-testing",
+    }),
+    NODE_REPL_BROWSER_CLIENT_MARKETPLACE_NAME: "openai-bundled",
+    NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S: "9990b9b3defcd92659e0d88c4cf847d97c64c0af047c4a24266821711c24749e",
+    NODE_REPL_TRUSTED_CODE_PATHS: trustedCodePaths.filter(existsSync).join(path.delimiter),
+  };
+}
+
+async function requestMacOsControlPermissions(): Promise<void> {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  const panesToOpen = new Set<string>();
+  const accessibilityTrusted = systemPreferences.isTrustedAccessibilityClient(true);
+  if (!accessibilityTrusted) {
+    panesToOpen.add("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+  }
+
+  if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+    try {
+      await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: {
+          width: 1,
+          height: 1,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to request screen recording permission", error);
+    }
+
+    if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+      panesToOpen.add("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+    }
+  }
+
+  panesToOpen.add("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent");
+
+  for (const paneUrl of panesToOpen) {
+    await shell.openExternal(paneUrl);
+    await delay(500);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function buildRecentTranscriptSeedPrompt(currentRequestId: string): Promise<string | undefined> {
+  const events = await readRecentTranscriptForSeed(currentRequestId, 20);
+  if (!events.length) {
+    return undefined;
+  }
+
+  return [
+    "Recent BotPilot chat transcript before this new master-agent session.",
+    "Use it to resolve follow-ups like \"try again\", \"continue\", or \"fix that\". The current user task appears after this transcript and has priority.",
+    "",
+    formatTranscriptEvents(events),
+  ].join("\n");
+}
+
+async function readRecentTranscriptForSeed(currentRequestId: string, limit: number): Promise<ChatMessageEvent[]> {
+  const fromMemory = chatHistory.filter((event) => event.requestId !== currentRequestId).slice(-limit);
+  if (fromMemory.length) {
+    return fromMemory;
+  }
+
+  const fromStore = await chatTranscriptStore?.readRecent(limit + 8);
+  return (fromStore ?? []).filter((event) => event.requestId !== currentRequestId).slice(-limit);
+}
+
+function formatTranscriptEvents(events: ChatMessageEvent[]): string {
+  return events
+    .map((event) => {
+      const meta = event.meta?.length ? ` (${event.meta.join(", ")})` : "";
+      const attachments = formatTranscriptAttachments(event.attachments);
+      const text = truncateForSeed(event.text.trim() || "[no text]", 1_500);
+      return `- ${event.timestamp} ${event.role}/${event.kind}${meta}: ${text}${attachments}`;
+    })
+    .join("\n");
+}
+
+function formatTranscriptAttachments(attachments: ChatMessageAttachment[] | undefined): string {
+  if (!attachments?.length) {
+    return "";
+  }
+
+  const parts = attachments.map((attachment) => {
+    const name = attachment.fileName ? ` ${attachment.fileName}` : "";
+    const transcript = attachment.transcript?.text ? ` transcript=${truncateForSeed(attachment.transcript.text, 500)}` : "";
+    return `${attachment.kind}${name}${transcript}`;
+  });
+  return ` [attachments: ${parts.join("; ")}]`;
+}
+
+function truncateForSeed(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}...` : normalized;
 }
 
 function setupIpcHandlers(): void {
@@ -361,6 +580,19 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle("assyst:save-telegram-settings", async (_event, payload: unknown) => {
     return getSettingsStore().updateTelegramSettings(parseTelegramSettingsUpdate(payload));
+  });
+
+  ipcMain.handle("assyst:get-master-agent-settings", async () => {
+    return getSettingsStore().getMasterAgentSettings(getDefaultMasterAgentSettings());
+  });
+
+  ipcMain.handle("assyst:save-master-agent-settings", async (_event, payload: unknown) => {
+    const settings = await getSettingsStore().updateMasterAgentSettings(
+      parseMasterAgentSettingsUpdate(payload),
+      getDefaultMasterAgentSettings(),
+    );
+    await setupMasterAgent();
+    return settings;
   });
 
   ipcMain.handle("assyst:send-message", async (_event, payload: unknown) => {
@@ -487,6 +719,11 @@ async function performSafeRestart(): Promise<void> {
     await codexMcpClient?.stop();
   } catch (error) {
     console.error("Failed to stop Codex MCP client before restart", error);
+  }
+  try {
+    await browserUseBackend?.stop();
+  } catch (error) {
+    console.error("Failed to stop Browser Use backend before restart", error);
   }
 
   app.relaunch();
@@ -826,6 +1063,18 @@ function parseTelegramSettingsUpdate(payload: unknown): TelegramSettingsUpdate {
     trustedChatId: typeof value.trustedChatId === "string" ? value.trustedChatId : undefined,
     pollingMaxIntervalMinutes: parseOptionalNumber(value.pollingMaxIntervalMinutes),
     clearBotToken: value.clearBotToken === true,
+  };
+}
+
+function parseMasterAgentSettingsUpdate(payload: unknown): MasterAgentSettingsUpdate {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid settings payload");
+  }
+
+  const value = payload as Record<string, unknown>;
+  return {
+    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : undefined,
+    mcpServersJson: typeof value.mcpServersJson === "string" ? value.mcpServersJson : undefined,
   };
 }
 

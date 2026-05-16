@@ -10,8 +10,37 @@
     "build": "tsc -p tsconfig.json",
     "dev": "npm run build && electron .",
     "master": "tsx src/cli.ts master",
+    "package": "npm run build && electron-builder --mac dmg",
+    "package:dir": "npm run build && electron-builder --dir",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "build": {
+    "appId": "local.botpilot.daemon",
+    "productName": "BotPilot",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "README.md",
+      "configs/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "dist/mcp/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   },
   "keywords": [
     "agent",
@@ -25,6 +54,7 @@
   "devDependencies": {
     "@types/node": "^22.15.3",
     "electron": "^41.5.0",
+    "electron-builder": "^26.8.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^3.1.2"

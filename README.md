@@ -46,6 +46,18 @@ Start the Electron shell:
 npm run dev
 ```
 
+Build a macOS installer package:
+
+```bash
+npm run package
+```
+
+The packaged artifacts are written to `release/`. For a faster local packaging smoke test without creating a DMG, run:
+
+```bash
+npm run package:dir
+```
+
 The app keeps running in the background when the window is closed. Use the tray/menu-bar icon to show the window, pause/resume background work, or quit.
 
 Use the `Settings` button or the tray/menu-bar `Settings...` item to configure Telegram access. The bot token is stored through Electron secure storage and is not sent back to the renderer after saving; the trusted `chat_id` and maximum polling interval are stored in the app settings file.

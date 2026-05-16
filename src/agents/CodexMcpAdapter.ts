@@ -7,6 +7,7 @@ export interface CodexMcpAdapterOptions {
   client: CodexMcpClient;
   dialogId: string;
   dialogVersion?: string;
+  buildSeedPrompt?: (request: AgentRunRequest) => Promise<string | undefined>;
   store: DialogStore;
 }
 
@@ -66,14 +67,7 @@ export class CodexMcpAdapter implements AgentAdapter {
           timestamp: new Date().toISOString(),
         });
         await this.options.store.delete(this.options.dialogId);
-        const replacement = await this.createThread({
-          ...request,
-          prompt: [
-            "The previous live Codex MCP session was not found. Start a replacement master-agent dialog.",
-            "",
-            request.prompt,
-          ].join("\n"),
-        });
+        const replacement = await this.createThread(request, "The previous live Codex MCP session was not found. Start a replacement master-agent dialog.");
         return this.toRunResult(request, startedAtDate, startedAt, replacement.content, true, replacement.threadId, true);
       }
 
@@ -109,7 +103,7 @@ export class CodexMcpAdapter implements AgentAdapter {
     }
   }
 
-  private createThread(request: AgentRunRequest) {
+  private async createThread(request: AgentRunRequest, reason?: string) {
     if (!this.options.client.isStarted()) {
       request.onProgress?.({
         phase: "mcp-starting",
@@ -122,7 +116,8 @@ export class CodexMcpAdapter implements AgentAdapter {
       message: "Waiting for Codex to create the thread and answer.",
       timestamp: new Date().toISOString(),
     });
-    return this.options.client.callCodex(this.buildCreateArgs(request), this.config.timeoutMs ?? request.timeoutMs);
+    const seededRequest = await this.withSeedPrompt(request, reason);
+    return this.options.client.callCodex(this.buildCreateArgs(seededRequest), this.config.timeoutMs ?? request.timeoutMs);
   }
 
   private reply(threadId: string, request: AgentRunRequest) {
@@ -179,6 +174,22 @@ export class CodexMcpAdapter implements AgentAdapter {
     }
 
     return args;
+  }
+
+  private async withSeedPrompt(request: AgentRunRequest, reason?: string): Promise<AgentRunRequest> {
+    const seedPrompt = await this.options.buildSeedPrompt?.(request);
+    if (!seedPrompt && !reason) {
+      return request;
+    }
+
+    return {
+      ...request,
+      prompt: [
+        reason,
+        seedPrompt,
+        request.prompt,
+      ].filter(Boolean).join("\n\n"),
+    };
   }
 
   private toDialogRecord(threadId: string, existing?: DialogRecord): DialogRecord {

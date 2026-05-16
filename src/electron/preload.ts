@@ -38,6 +38,16 @@ export interface TelegramSettingsUpdate {
   clearBotToken?: boolean;
 }
 
+export interface MasterAgentSettingsView {
+  systemPrompt: string;
+  mcpServersJson: string;
+}
+
+export interface MasterAgentSettingsUpdate {
+  systemPrompt?: string;
+  mcpServersJson?: string;
+}
+
 export interface BotPilotApi {
   getSettings(): Promise<ChatSettings>;
   getChatHistory(): Promise<ChatMessageEvent[]>;
@@ -47,6 +57,8 @@ export interface BotPilotApi {
   openSettings(): Promise<void>;
   getTelegramSettings(): Promise<TelegramSettingsView>;
   saveTelegramSettings(update: TelegramSettingsUpdate): Promise<TelegramSettingsView>;
+  getMasterAgentSettings(): Promise<MasterAgentSettingsView>;
+  saveMasterAgentSettings(update: MasterAgentSettingsUpdate): Promise<MasterAgentSettingsView>;
 }
 
 const api: BotPilotApi = {
@@ -66,6 +78,8 @@ const api: BotPilotApi = {
   openSettings: () => ipcRenderer.invoke("assyst:open-settings") as Promise<void>,
   getTelegramSettings: () => ipcRenderer.invoke("assyst:get-telegram-settings") as Promise<TelegramSettingsView>,
   saveTelegramSettings: (update) => ipcRenderer.invoke("assyst:save-telegram-settings", update) as Promise<TelegramSettingsView>,
+  getMasterAgentSettings: () => ipcRenderer.invoke("assyst:get-master-agent-settings") as Promise<MasterAgentSettingsView>,
+  saveMasterAgentSettings: (update) => ipcRenderer.invoke("assyst:save-master-agent-settings", update) as Promise<MasterAgentSettingsView>,
 };
 
 contextBridge.exposeInMainWorld("botpilot", api);

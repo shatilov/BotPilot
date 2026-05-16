@@ -17,6 +17,7 @@ export function renderSettingsPage(): string {
         --primary-strong: #174a87;
         --danger: #b42318;
         --success: #16784a;
+        --tab: #eef2f7;
       }
 
       * {
@@ -38,7 +39,7 @@ export function renderSettingsPage(): string {
       }
 
       header {
-        padding: 16px 18px 12px;
+        padding: 16px 18px 0;
         background: var(--panel);
         border-bottom: 1px solid var(--border);
       }
@@ -55,11 +56,47 @@ export function renderSettingsPage(): string {
         font-size: 12px;
       }
 
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .tab {
+        height: 34px;
+        min-width: 0;
+        border: 1px solid transparent;
+        border-radius: 7px 7px 0 0;
+        padding: 0 12px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .tab.active {
+        background: var(--bg);
+        border-color: var(--border);
+        border-bottom-color: var(--bg);
+        color: var(--text);
+      }
+
       main {
+        min-height: 0;
         padding: 18px;
       }
 
-      form {
+      form,
+      .panel {
+        min-height: 0;
+      }
+
+      .panel {
+        display: none;
+      }
+
+      .panel.active {
         display: grid;
         gap: 14px;
       }
@@ -74,18 +111,33 @@ export function renderSettingsPage(): string {
         font-weight: 650;
       }
 
-      input {
+      input,
+      textarea {
         width: 100%;
-        height: 38px;
         border: 1px solid var(--border);
         border-radius: 8px;
         background: var(--panel);
         color: var(--text);
-        padding: 0 10px;
+        padding: 9px 10px;
         font: inherit;
       }
 
-      input:focus {
+      input {
+        height: 38px;
+      }
+
+      textarea {
+        min-height: 360px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre;
+        overflow: auto;
+      }
+
+      input:focus,
+      textarea:focus {
         outline: none;
         border-color: var(--primary);
         box-shadow: 0 0 0 3px rgba(34, 94, 168, 0.12);
@@ -180,29 +232,51 @@ export function renderSettingsPage(): string {
     <div class="window">
       <header>
         <h1>Settings</h1>
-        <div class="subtitle">Telegram access</div>
+        <div class="subtitle">BotPilot daemon configuration</div>
+        <div class="tabs" role="tablist" aria-label="Settings sections">
+          <button class="tab active" type="button" data-tab="telegram" role="tab" aria-selected="true">Telegram</button>
+          <button class="tab" type="button" data-tab="prompt" role="tab" aria-selected="false">System Prompt</button>
+          <button class="tab" type="button" data-tab="mcp" role="tab" aria-selected="false">MCP</button>
+        </div>
       </header>
 
       <main>
         <form id="form">
-          <div class="field">
-            <label for="botToken">Telegram bot token</label>
-            <input id="botToken" type="password" autocomplete="off" spellcheck="false" />
-            <div id="tokenState" class="token-state">Token not configured</div>
-            <div class="hint">Leave empty to keep the saved token.</div>
-          </div>
+          <section id="panel-telegram" class="panel active" role="tabpanel">
+            <div class="field">
+              <label for="botToken">Telegram bot token</label>
+              <input id="botToken" type="password" autocomplete="off" spellcheck="false" />
+              <div id="tokenState" class="token-state">Token not configured</div>
+              <div class="hint">Leave empty to keep the saved token.</div>
+            </div>
 
-          <div class="field">
-            <label for="trustedChatId">Trusted chat_id</label>
-            <input id="trustedChatId" type="text" autocomplete="off" spellcheck="false" />
-            <div class="hint">Only this Telegram chat will be allowed to control the daemon.</div>
-          </div>
+            <div class="field">
+              <label for="trustedChatId">Trusted chat_id</label>
+              <input id="trustedChatId" type="text" autocomplete="off" spellcheck="false" />
+              <div class="hint">Only this Telegram chat can control the daemon.</div>
+            </div>
 
-          <div class="field">
-            <label for="pollingMaxIntervalMinutes">Max polling interval, minutes</label>
-            <input id="pollingMaxIntervalMinutes" type="number" min="1" max="30" step="1" />
-            <div class="hint">After each answer the bot polls every minute for 5 minutes, then backs off up to this value.</div>
-          </div>
+            <div class="field">
+              <label for="pollingMaxIntervalMinutes">Max polling interval, minutes</label>
+              <input id="pollingMaxIntervalMinutes" type="number" min="1" max="30" step="1" />
+              <div class="hint">Allowed range: 1-30.</div>
+            </div>
+          </section>
+
+          <section id="panel-prompt" class="panel" role="tabpanel">
+            <div class="field">
+              <label for="systemPrompt">Master-agent system prompt</label>
+              <textarea id="systemPrompt" spellcheck="false"></textarea>
+            </div>
+          </section>
+
+          <section id="panel-mcp" class="panel" role="tabpanel">
+            <div class="field">
+              <label for="mcpServersJson">MCP servers JSON</label>
+              <textarea id="mcpServersJson" spellcheck="false"></textarea>
+              <div class="hint">Saved as Codex MCP config.mcp_servers.</div>
+            </div>
+          </section>
         </form>
       </main>
 
@@ -220,10 +294,18 @@ export function renderSettingsPage(): string {
       const botToken = document.getElementById("botToken");
       const trustedChatId = document.getElementById("trustedChatId");
       const pollingMaxIntervalMinutes = document.getElementById("pollingMaxIntervalMinutes");
+      const systemPrompt = document.getElementById("systemPrompt");
+      const mcpServersJson = document.getElementById("mcpServersJson");
       const tokenState = document.getElementById("tokenState");
       const status = document.getElementById("status");
       const save = document.getElementById("save");
       const clearToken = document.getElementById("clearToken");
+      const tabs = Array.from(document.querySelectorAll(".tab"));
+      const panels = {
+        telegram: document.getElementById("panel-telegram"),
+        prompt: document.getElementById("panel-prompt"),
+        mcp: document.getElementById("panel-mcp"),
+      };
       let currentTokenConfigured = false;
 
       function setStatus(text, mode) {
@@ -237,9 +319,11 @@ export function renderSettingsPage(): string {
         botToken.disabled = value;
         trustedChatId.disabled = value;
         pollingMaxIntervalMinutes.disabled = value;
+        systemPrompt.disabled = value;
+        mcpServersJson.disabled = value;
       }
 
-      function renderSettings(settings) {
+      function renderTelegramSettings(settings) {
         currentTokenConfigured = Boolean(settings.botTokenConfigured);
         trustedChatId.value = settings.trustedChatId || "";
         pollingMaxIntervalMinutes.value = String(settings.pollingMaxIntervalMinutes || 30);
@@ -247,14 +331,49 @@ export function renderSettingsPage(): string {
         clearToken.disabled = !currentTokenConfigured;
       }
 
+      function renderMasterAgentSettings(settings) {
+        systemPrompt.value = settings.systemPrompt || "";
+        mcpServersJson.value = settings.mcpServersJson || "{\\n}\\n";
+      }
+
+      function selectTab(name) {
+        for (const tab of tabs) {
+          const active = tab.dataset.tab === name;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+        }
+        for (const [panelName, panel] of Object.entries(panels)) {
+          panel.classList.toggle("active", panelName === name);
+        }
+      }
+
       async function load() {
         try {
-          const settings = await window.botpilot.getTelegramSettings();
-          renderSettings(settings);
-          setStatus(settings.encryptionAvailable ? "Ready" : "Secure storage unavailable", settings.encryptionAvailable ? "" : "error");
+          const telegramSettings = await window.botpilot.getTelegramSettings();
+          const masterAgentSettings = await window.botpilot.getMasterAgentSettings();
+          renderTelegramSettings(telegramSettings);
+          renderMasterAgentSettings(masterAgentSettings);
+          setStatus(telegramSettings.encryptionAvailable ? "Ready" : "Secure storage unavailable", telegramSettings.encryptionAvailable ? "" : "error");
         } catch (error) {
           setStatus(error && error.message ? error.message : String(error), "error");
         }
+      }
+
+      async function saveAll(options = {}) {
+        JSON.parse(mcpServersJson.value);
+        const telegramSettings = await window.botpilot.saveTelegramSettings({
+          botToken: botToken.value,
+          trustedChatId: trustedChatId.value,
+          pollingMaxIntervalMinutes: Number(pollingMaxIntervalMinutes.value),
+          clearBotToken: options.clearBotToken === true,
+        });
+        const masterAgentSettings = await window.botpilot.saveMasterAgentSettings({
+          systemPrompt: systemPrompt.value,
+          mcpServersJson: mcpServersJson.value,
+        });
+        botToken.value = "";
+        renderTelegramSettings(telegramSettings);
+        renderMasterAgentSettings(masterAgentSettings);
       }
 
       form.addEventListener("submit", async (event) => {
@@ -262,13 +381,7 @@ export function renderSettingsPage(): string {
         setBusy(true);
         setStatus("Saving...");
         try {
-          const settings = await window.botpilot.saveTelegramSettings({
-            botToken: botToken.value,
-            trustedChatId: trustedChatId.value,
-            pollingMaxIntervalMinutes: Number(pollingMaxIntervalMinutes.value),
-          });
-          botToken.value = "";
-          renderSettings(settings);
+          await saveAll();
           setStatus("Saved", "saved");
         } catch (error) {
           setStatus(error && error.message ? error.message : String(error), "error");
@@ -281,13 +394,7 @@ export function renderSettingsPage(): string {
         setBusy(true);
         setStatus("Saving...");
         try {
-          const settings = await window.botpilot.saveTelegramSettings({
-            clearBotToken: true,
-            trustedChatId: trustedChatId.value,
-            pollingMaxIntervalMinutes: Number(pollingMaxIntervalMinutes.value),
-          });
-          botToken.value = "";
-          renderSettings(settings);
+          await saveAll({ clearBotToken: true });
           setStatus("Token cleared", "saved");
         } catch (error) {
           setStatus(error && error.message ? error.message : String(error), "error");
@@ -295,6 +402,10 @@ export function renderSettingsPage(): string {
           setBusy(false);
         }
       });
+
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+      }
 
       load();
     </script>

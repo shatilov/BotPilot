@@ -22,14 +22,30 @@ export interface TelegramSettingsUpdate {
   clearBotToken?: boolean;
 }
 
+export interface MasterAgentSettingsView {
+  systemPrompt: string;
+  mcpServersJson: string;
+}
+
+export interface MasterAgentSettingsUpdate {
+  systemPrompt?: string;
+  mcpServersJson?: string;
+}
+
 interface PersistedSettings {
   telegram?: PersistedTelegramSettings;
+  masterAgent?: PersistedMasterAgentSettings;
 }
 
 interface PersistedTelegramSettings {
   botTokenEncrypted?: string;
   trustedChatId?: string;
   pollingMaxIntervalMinutes?: number;
+}
+
+interface PersistedMasterAgentSettings {
+  systemPrompt?: string;
+  mcpServersJson?: string;
 }
 
 export const DEFAULT_TELEGRAM_POLLING_MAX_INTERVAL_MINUTES = 30;
@@ -83,6 +99,43 @@ export class AppSettingsStore {
     return toTelegramView(telegram);
   }
 
+  async getMasterAgentSettings(defaults: MasterAgentSettingsView): Promise<MasterAgentSettingsView> {
+    const settings = await this.readSettings();
+    return toMasterAgentView(settings.masterAgent, defaults);
+  }
+
+  async updateMasterAgentSettings(
+    update: MasterAgentSettingsUpdate,
+    defaults: MasterAgentSettingsView,
+  ): Promise<MasterAgentSettingsView> {
+    const settings = await this.readSettings();
+    const masterAgent: PersistedMasterAgentSettings = {
+      ...(settings.masterAgent ?? {}),
+    };
+
+    const systemPrompt = update.systemPrompt === undefined
+      ? defaults.systemPrompt
+      : normalizeOptionalString(update.systemPrompt);
+    if (systemPrompt === undefined || systemPrompt === defaults.systemPrompt) {
+      delete masterAgent.systemPrompt;
+    } else {
+      masterAgent.systemPrompt = systemPrompt;
+    }
+
+    const mcpServersJson = update.mcpServersJson === undefined
+      ? defaults.mcpServersJson
+      : normalizeMcpServersJson(update.mcpServersJson);
+    if (mcpServersJson === defaults.mcpServersJson) {
+      delete masterAgent.mcpServersJson;
+    } else {
+      masterAgent.mcpServersJson = mcpServersJson;
+    }
+
+    settings.masterAgent = masterAgent;
+    await this.writeSettings(settings);
+    return toMasterAgentView(masterAgent, defaults);
+  }
+
   private async readSettings(): Promise<PersistedSettings> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
@@ -113,6 +166,16 @@ function toTelegramView(telegram: PersistedTelegramSettings | undefined): Telegr
   };
 }
 
+function toMasterAgentView(
+  masterAgent: PersistedMasterAgentSettings | undefined,
+  defaults: MasterAgentSettingsView,
+): MasterAgentSettingsView {
+  return {
+    systemPrompt: normalizeOptionalString(masterAgent?.systemPrompt) ?? defaults.systemPrompt,
+    mcpServersJson: normalizeMcpServersJson(masterAgent?.mcpServersJson ?? defaults.mcpServersJson),
+  };
+}
+
 function encryptToken(value: string): string {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Secure token storage is not available on this system");
@@ -139,6 +202,30 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function normalizeMcpServersJson(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("MCP servers must be a JSON object");
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error("MCP servers must be a JSON object");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(`MCP servers JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (!isObject(parsed) || Array.isArray(parsed)) {
+    throw new Error("MCP servers must be a JSON object");
+  }
+
+  return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
 function normalizePollingMaxIntervalMinutes(value: unknown): number {
